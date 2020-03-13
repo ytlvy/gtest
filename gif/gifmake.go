@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"os"
 	"time"
 )
 
@@ -24,9 +23,9 @@ const (
 )
 
 // MakeGif make a gif
-func (g *Maker) MakeGif() {
+func (g *Maker) MakeGif(out io.Writer) {
 	rand.Seed(time.Now().UTC().UnixNano())
-	g.lissajous(os.Stdout)
+	g.lissajous(out)
 }
 
 func (g *Maker) lissajous(out io.Writer) {

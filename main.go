@@ -1,17 +1,24 @@
 package main
 
 import (
+	"os"
+
 	"github.com/ytlvy/gtest/gif"
 	"github.com/ytlvy/gtest/http"
 )
 
 func main() {
-	runGif()
+	runServer()
+}
+
+func runServer() {
+	server := http.NewLServer()
+	server.Run()
 }
 
 func runGif() {
 	gif := new(gif.Maker)
-	gif.MakeGif()
+	gif.MakeGif(os.Stdout)
 }
 
 func runFetch() {
