@@ -1,4 +1,4 @@
-package main
+package http
 
 import (
 	"fmt"
@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-func main() {
+type fetchManager struct {
+}
+
+func (f *fetchManager) RunFetch() {
 
 	for _, url := range os.Args[1:] {
 		if len(url) < 1 {
