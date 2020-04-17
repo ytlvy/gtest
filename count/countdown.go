@@ -19,37 +19,11 @@ type fsizeInfo struct {
 type CountdownManager struct {
 	fileMap        map[string]*fsizeInfo
 	nfiles, nbytes int64
-	fileSizes      chan fileItem
-	newpathchan    chan string
+	sizeChan       chan fileItem
+	pathchan       chan string
 	root           string
-}
-
-//RunCount 计数
-func (f *CountdownManager) RunCount() {
-	ticker := time.NewTicker(1 * time.Second)
-
-	//abort
-	abort := make(chan struct{})
-	go func() {
-		os.Stdin.Read(make([]byte, 1))
-		abort <- struct{}{}
-	}()
-
-	fmt.Println("Commencing countdown. Press return to abort")
-
-count:
-	for countdown := 10; countdown > 0; countdown-- {
-		select {
-		case <-ticker.C:
-			fmt.Printf("counting ... %02d\n", countdown)
-		case <-abort:
-			fmt.Println("Launch aborted")
-			break count
-		}
-
-	}
-
-	ticker.Stop()
+	closingChan    chan struct{} // signal channel
+	closedChan     chan struct{}
 }
 
 var verbose = flag.Bool("v", false, "show verbose progress messages")
@@ -66,16 +40,34 @@ func (f *CountdownManager) walkDir1(curdir string) {
 			subdir := filepath.Join(curdir, entry.Name())
 
 			//增加子目录
-			f.newpathchan <- subdir
-			f.walkDir1(subdir)
+		Loop1:
+			for {
+				select {
+				case <-f.closingChan:
+					return
+				case f.pathchan <- subdir:
+					f.walkDir1(subdir)
+					break Loop1
+				default:
+				}
+			}
 		} else {
-			f.fileSizes <- fileItem{curdir, entry.Size()}
+		Loop:
+			for {
+				select {
+				case <-f.closingChan:
+					return
+				case f.sizeChan <- fileItem{curdir, entry.Size()}:
+					break Loop
+				default:
+				}
+			}
 		}
 	}
 }
 
 func (f *CountdownManager) addPathInfo(path string) {
-
+	// fmt.Println("addnewpath")
 	relpath, _ := filepath.Rel(f.root, path)
 	paths := strings.Split(relpath, string(os.PathSeparator))
 	if len(paths) > 1 {
@@ -89,9 +81,19 @@ func (f *CountdownManager) addPathInfo(path string) {
 	}
 }
 
+func (f *CountdownManager) stopDu() {
+	select {
+	case f.closingChan <- struct{}{}:
+		<-f.closedChan
+	case <-f.closedChan:
+	}
+}
+
 //RunDu1 打印目录使用情况
 // go run main.go -v "/Users/yanjieguo/Documents"
 func (f *CountdownManager) RunDu1() {
+
+	startTime := time.Now()
 
 	flag.Parse()
 	roots := flag.Args()
@@ -100,8 +102,12 @@ func (f *CountdownManager) RunDu1() {
 	}
 
 	f.fileMap = make(map[string]*fsizeInfo)
-	f.fileSizes = make(chan fileItem)
-	f.newpathchan = make(chan string)
+	f.sizeChan = make(chan fileItem)
+	f.pathchan = make(chan string)
+	f.closingChan = make(chan struct{})
+	f.closedChan = make(chan struct{})
+
+	var ticker *time.Ticker
 
 	//abort
 	abort := make(chan struct{})
@@ -110,27 +116,47 @@ func (f *CountdownManager) RunDu1() {
 		abort <- struct{}{}
 	}()
 
+	defer func() {
+		close(abort)
+		close(f.closingChan)
+		close(f.closedChan)
+		close(f.sizeChan)
+		close(f.pathchan)
+		fmt.Println("closer run")
+	}()
+
 	root := roots[0]
 	f.root = root
 	go func() {
 		f.walkDir1(root)
-		close(f.fileSizes)
-		close(f.newpathchan)
-		fmt.Println("closer run")
+		f.stopDu()
 	}()
 
-	var tick <-chan time.Time
 	if *verbose {
-		tick = time.Tick(500 * time.Millisecond)
+		ticker = time.NewTicker(500 * time.Millisecond)
+		defer func() {
+			ticker.Stop()
+		}()
 	}
 	isabort := false
 loop:
 	for {
+		if *verbose {
+			select {
+			case <-ticker.C:
+				fmt.Printf("counting press enter to cancel \n")
+			default:
+			}
+		}
+
 		select {
-		case item, ok := <-f.fileSizes:
+		case <-f.closingChan:
+			break loop
+		case item, ok := <-f.sizeChan:
 			if !ok {
 				break loop
 			}
+			// fmt.Printf("recieve data %v\n", item)
 
 			for path, info := range f.fileMap {
 				if strings.HasPrefix(item.path, path) {
@@ -142,18 +168,17 @@ loop:
 			f.nfiles++
 			f.nbytes += item.nbytes
 
-		case <-tick:
-			fmt.Printf("counting press enter to cancel \n")
-		case newpath, ok := <-f.newpathchan:
+		case newpath, ok := <-f.pathchan:
 			if !ok {
 				break loop
 			}
 
 			f.addPathInfo(newpath)
+
 		case <-abort:
 			isabort = true
 			fmt.Println("Launch aborted")
-			close(abort)
+			f.stopDu()
 			break loop
 		}
 	}
@@ -161,6 +186,7 @@ loop:
 	if !isabort {
 		f.printDiskUsage()
 	}
+	fmt.Printf("usage time %f\n", time.Now().Sub(startTime).Seconds())
 }
 
 func (f *CountdownManager) printDiskUsage() {
@@ -169,31 +195,6 @@ func (f *CountdownManager) printDiskUsage() {
 		relp, _ := filepath.Rel(f.root, path)
 		fmt.Printf("  | %s  %dfiles  %.1fMB\n", relp, info.nfiles, float64(info.nbytes)/1e6)
 	}
-}
-
-// RunDu 打印目录使用情况
-func (f *CountdownManager) RunDu() {
-	flag.Parse()
-	roots := flag.Args()
-	if len(roots) < 1 {
-		roots = []string{"."}
-	}
-
-	fileSizes := make(chan int64, 0)
-	go func() {
-		for _, root := range roots {
-			f.walkDir(root, fileSizes)
-		}
-		close(fileSizes)
-	}()
-
-	var nfiles, nbytes int64
-	for size := range fileSizes {
-		nfiles++
-		nbytes += size
-	}
-
-	fmt.Printf("%d files  %.1f GB\n", nfiles, float64(nbytes)/1e9)
 }
 
 func (f *CountdownManager) walkDir(dir string, fileSizes chan<- int64) {
