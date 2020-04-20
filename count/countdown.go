@@ -52,18 +52,26 @@ func (f *CountdownManager) walkDir1(curdir string) {
 				}
 			}
 		} else {
-		Loop:
-			for {
-				select {
-				case <-f.closingChan:
-					return
-				case f.sizeChan <- fileItem{curdir, entry.Size()}:
-					break Loop
-				default:
-				}
-			}
+			f.sendData(curdir, entry.Size())
 		}
 	}
+}
+
+var tokens = make(chan struct{}, 20)
+
+func (f *CountdownManager) sendData(curdir string, size int64) {
+	tokens <- struct{}{} // acquire a token
+Loop:
+	for {
+		select {
+		case <-f.closingChan:
+			return
+		case f.sizeChan <- fileItem{curdir, size}:
+			break Loop
+		default:
+		}
+	}
+	<-tokens // release the token
 }
 
 func (f *CountdownManager) addPathInfo(path string) {
@@ -98,7 +106,7 @@ func (f *CountdownManager) RunDu1() {
 	flag.Parse()
 	roots := flag.Args()
 	if len(roots) < 1 {
-		roots = []string{"."}
+		roots = []string{"/Users/yanjieguo/Documents"}
 	}
 
 	f.fileMap = make(map[string]*fsizeInfo)

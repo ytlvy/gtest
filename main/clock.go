@@ -1,4 +1,5 @@
-package single
+// Package single sss
+package main
 
 import (
 	"io"
@@ -7,7 +8,7 @@ import (
 	"time"
 )
 
-func clock() {
+func main() {
 	listener, err := net.Listen("tcp", ":8000")
 	if err != nil {
 		log.Fatal(err)

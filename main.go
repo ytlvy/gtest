@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ytlvy/gtest/chat"
+
 	"github.com/ytlvy/gtest/count"
 	"github.com/ytlvy/gtest/gif"
 	"github.com/ytlvy/gtest/http"
@@ -15,7 +17,12 @@ func main() {
 	// tcase := &mycase.MyCase{}
 	// tcase.TestInterfacePara()
 	// println("hello " + "world")
-	runCoundown()
+	runChater()
+}
+
+func runChater() {
+	chater := &chat.SimpleChater{}
+	chater.Start()
 }
 
 func runCoundown() {

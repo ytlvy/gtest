@@ -1,4 +1,7 @@
-package single
+// +build ignore
+
+// Package single sss
+package main
 
 import (
 	"io"
@@ -7,7 +10,7 @@ import (
 	"os"
 )
 
-func netcate() {
+func main() {
 	conn, err := net.Dial("tcp", ":8000")
 	if err != nil {
 		log.Fatal(err)
