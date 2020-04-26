@@ -1,1 +1,0 @@
-//#define NSString *url = "http://comment-test.kuwo.cn";

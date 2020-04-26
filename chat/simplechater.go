@@ -82,8 +82,20 @@ func (s *SimpleChater) handleConn(conn net.Conn) {
 	enteringChan <- cli
 
 	input := bufio.NewScanner(conn)
-	for input.Scan() {
-		messageChan <- &messageInfo{cli.id, input.Text()}
+	for true {
+		// fmt.Printf("input a msg:")
+		input.Scan()
+		text := input.Text()
+		if err := input.Err(); err != nil {
+			fmt.Println("Erro reading from input: ", err)
+		}
+
+		if text == "" {
+			break
+		}
+
+		messageChan <- &messageInfo{cli.id, text}
+
 	}
 
 	leavingChan <- cli
